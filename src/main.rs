@@ -4,7 +4,7 @@
 
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LockResult, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering};
 use std::thread;
 use rand::Rng;
@@ -12,13 +12,13 @@ use rand::Rng;
 fn main() {
     /// Агенты
     trait Agent {
-        fn action(&mut self);
+        fn action(& self);
     }
 
     struct Animal {}
 
     impl Agent for Animal {
-        fn action(&mut self) {
+        fn action(& self) {
             for _ in 0..20_000_000_u64 {
                 // Просто гоняем процессорное время.
                 let _ = rand::thread_rng().gen_range(0..2);
@@ -27,17 +27,15 @@ fn main() {
     }
 
     /// Точка мира
-    struct Mesh<A: Agent> {
+    struct Mesh {
         agent_hash: AtomicUsize,
-        agent_ptr: AtomicPtr<A>,
         //is_processed: AtomicBool,
     }
 
-    impl<A: Agent> Default for Mesh<A> {
+    impl Default for Mesh {
         fn default() -> Self {
             Mesh {
                 agent_hash: Default::default(),
-                agent_ptr: AtomicPtr::default(),
                 //is_processed: Default::default(),
             }
         }
@@ -48,22 +46,22 @@ fn main() {
         height: usize,
         width: usize,
         // Среда
-        landscape: Arc<Vec<Vec<Mesh<A>>>>,
-        agents: HashMap<usize, A>,
+        landscape: Arc<Vec<Vec<Mesh>>>,
+        agents: Arc<RwLock<HashMap<usize, RwLock<A>>>>,
 
         hash_count: usize,
     }
 
-    impl<A: Agent + 'static> World::<A> {
+    impl<A: Agent + 'static + std::marker::Send + std::marker::Sync> World::<A> {
         pub fn new() -> Self {
             let rows = 16_usize;
             let cols = 32_usize;
 
-            let mut landscape: Vec<Vec<Mesh<A>>> = Vec::with_capacity(rows);
+            let mut landscape: Vec<Vec<Mesh>> = Vec::with_capacity(rows);
 
             for _ in 0..rows {
                 // Создаем строку.
-                let mut row: Vec<Mesh<A>> = Vec::with_capacity(cols);
+                let mut row: Vec<Mesh> = Vec::with_capacity(cols);
                 // Проходимся по строке и заполняем ее значениями по умолчанию.
                 for _ in 0..cols {
                     row.push(Default::default());
@@ -76,40 +74,41 @@ fn main() {
                 height: rows,
                 width: cols,
                 landscape: Arc::new(landscape),
-                agents: HashMap::new(),
+                agents: Arc::new(RwLock::new(HashMap::new())),
                 hash_count: 0,
             }
         }
 
-        pub fn add(&mut self, mut agent: A, row: usize, col: usize) {
+        pub fn add(&mut self, agent: A, row: usize, col: usize) {
             self.hash_count += 1;
-
             self.landscape[row][col].agent_hash.store(self.hash_count, Ordering::SeqCst);
-            self.landscape[row][col].agent_ptr.store(&mut agent, Ordering::SeqCst);
 
-            self.agents.insert(self.hash_count, agent);
+            let mut guard = self.agents.write().unwrap();
+            guard.insert(self.hash_count, RwLock::new(agent));
         }
 
         pub fn simulate(& self) {
             let mut thread_handles = vec![];
 
             // 16 потоков
-            for row in 0..16 {
+            for row in 0..1 {
                 let landscape = Arc::clone(&self.landscape);
                 let width = self.width.clone();
+                let agents = self.agents.clone();
 
                 thread_handles.push(thread::spawn(move || {
                     println!("Обрабатывается {} строка среды", row);
 
                     for col in 0..width {
                         let agent_hash = landscape[row][col].agent_hash.load(Ordering::SeqCst);
-                        let agent_ptr = landscape[row][col].agent_ptr.load(Ordering::SeqCst);
+                        let agents_guard = agents.read().unwrap();
+                        let agent = agents_guard.get(&agent_hash);
 
-                        if !agent_ptr.is_null() {
-                            println!("Обрабатываем агента с хеш-кодом {}", agent_hash);
-                            unsafe {
-                                let mut_ref = agent_ptr.as_mut().expect("Обнаружен нулевой указатель на агента");
-                                mut_ref.action();
+                        match agent {
+                            None => {}
+                            Some(a) => {
+                                let guard = a.read().unwrap();
+                                guard.action();
                             }
                         }
                     }
