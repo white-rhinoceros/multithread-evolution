@@ -49,8 +49,7 @@ fn main() {
         width: usize,
         // Среда
         landscape: Arc<Vec<Vec<Mesh<A>>>>,
-        // Агенты помещаем в "кучу"
-        agents: HashMap<usize, Box<A>>,
+        agents: HashMap<usize, A>,
 
         hash_count: usize,
     }
@@ -82,11 +81,11 @@ fn main() {
             }
         }
 
-        pub fn add(&mut self, mut agent: Box<A>, row: usize, col: usize) {
+        pub fn add(&mut self, mut agent: A, row: usize, col: usize) {
             self.hash_count += 1;
 
             self.landscape[row][col].agent_hash.store(self.hash_count, Ordering::SeqCst);
-            self.landscape[row][col].agent_ptr.store(agent.as_mut(), Ordering::SeqCst);
+            self.landscape[row][col].agent_ptr.store(&mut agent, Ordering::SeqCst);
 
             self.agents.insert(self.hash_count, agent);
         }
@@ -125,53 +124,11 @@ fn main() {
 
     let mut world = World::<Animal>::new();
 
-    let animal = Box::new(Animal{});
+    let animal = Animal{};
     world.add(animal, 0, 7);
 
-    let animal = Box::new(Animal{});
+    let animal = Animal{};
     world.add(animal, 1, 9);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 2, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 3, 9);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 4, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 5, 9);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 6, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 7, 9);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 8, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 9, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 10, 9);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 11, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 12, 9);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 13, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 14, 2);
-
-    let animal = Box::new(Animal{});
-    world.add(animal, 15, 9);
 
 
     use chrono::Utc;
